@@ -15,9 +15,10 @@ name = "ray_ruster"
 path = "src/main.rs"
 
 [dependencies]
-epoxy = "0.1.0"
-gl = "0.14.0"
-dylib= "0.0.3"
+image = "0.23"
+nalgebra = "0.21"
+regex = "1"
+tempfile = "3"
 
 [dependencies.gtk]
 version = "0.8.1"
