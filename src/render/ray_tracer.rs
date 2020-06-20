@@ -5,6 +5,7 @@ use self::image::{Rgb, RgbImage};
 use crate::geometry::mesh::Mesh;
 use crate::geometry::ray::Ray;
 use crate::geometry::types::{Direction, Position};
+use crate::render::config::CameraConfig;
 
 fn clamp_u8(f: f64) -> u8 {
     if f <= 0.0 {
@@ -25,27 +26,21 @@ fn interpolation_n_phong(
     return (*n1 * (1.0 - coord[0] - coord[1]) + coord[0] * *n2 + coord[1] * *n3).normalize();
 }
 
-pub fn render(
-    mesh: &Mesh,
-    camera_position: Position,
-    x: Direction,
-    y: Direction,
-    z: Direction,
-    fov: f64,
-    aspect_ration: f64,
-    width: u32,
-    height: u32,
-) -> RgbImage {
-    let mut img = RgbImage::new(width, height);
+pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
+    let mut img = RgbImage::new(camera_config.width, camera_config.height);
 
-    let step_x = fov.tan() / (width as f64);
-    let step_z = fov.tan() / aspect_ration / (height as f64);
+    let step_x = camera_config.fov.tan() / (camera_config.width as f64);
+    let step_z =
+        camera_config.fov.tan() / camera_config.aspect_ratio / (camera_config.height as f64);
+    let camera_position = camera_config.camera_position;
+    let width = camera_config.width;
+    let height = camera_config.height;
 
     for i in 0..width {
         for j in 0..height {
-            let dir = ((i as f64 - (width as f64) / 2.0) * step_x * x
-                + (j as f64 - (height as f64) / 2.0) * step_z * z
-                + y)
+            let dir = ((i as f64 - (width as f64) / 2.0) * step_x * camera_config.x
+                + (j as f64 - (height as f64) / 2.0) * step_z * camera_config.z
+                + camera_config.y)
                 .normalize();
             let vertex = Ray {
                 position: camera_position,

@@ -10,7 +10,9 @@ use std::time::Instant;
 
 use ray_ruster::geometry::mesh::Mesh;
 use ray_ruster::geometry::types::{Direction, Position};
+use ray_ruster::render::config;
 use ray_ruster::render::ray_tracer;
+
 use tempfile::tempdir;
 
 fn main() {
@@ -18,24 +20,23 @@ fn main() {
 
     let mesh = Mesh::load_off_file(Path::new("data/ram.off")).unwrap();
     println!("{:?}: loaded OFF model", start.elapsed());
-    let img = ray_tracer::render(
-        &mesh,
-        Position::new(0.0, -10.0, 0.5),
-        Direction::new(1.0, 0.0, 0.0),
-        Direction::new(0.0, 1.0, 0.0),
-        Direction::new(0.0, 0.0, 1.0),
-        60.0,
-        4.0 / 3.0,
-        400,
-        300,
-    );
+    let camera_config = config::CameraConfig {
+        camera_position: Position::new(0.0, -10.0, 0.5),
+        x: Direction::new(1.0, 0.0, 0.0),
+        y: Direction::new(0.0, 1.0, 0.0),
+        z: Direction::new(0.0, 0.0, 1.0),
+        fov: 60.0,
+        aspect_ratio: 4.0 / 3.0,
+        width: 400,
+        height: 300,
+    };
+    let img = ray_tracer::render(&mesh, &camera_config);
     println!("{:?}: rendering done", start.elapsed());
     let dir = tempdir().ok().unwrap();
-    let file_path = dir.path().join("my-temporary-note.png");
+    let file_path = dir.path().join("render.png");
     let _ = img.save(Path::new(&file_path));
-    let application =
-        gtk::Application::new(Some("com.github.gtk-rs.examples.basic"), Default::default())
-            .expect("failed to initialize GTK application");
+    let application = gtk::Application::new(Some("main.ray_ruster"), Default::default())
+        .expect("failed to initialize GTK application");
 
     application.connect_activate(move |app| {
         let window = gtk::ApplicationWindow::new(app);

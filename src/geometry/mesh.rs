@@ -26,6 +26,14 @@ pub enum OFFError {
 }
 
 impl Mesh {
+    pub fn from_vertices_and_triangles(vertices: Vec<Position>, triangles: Vec<Triangle>) -> Mesh {
+        let normals = compute_vertex_normals(&triangles, &vertices);
+        Mesh {
+            vertices: vertices,
+            normals: normals,
+            triangles: triangles,
+        }
+    }
     pub fn load_off_file(path: &Path) -> Result<Mesh, OFFError> {
         let off_file_result = File::open(path).map_err(OFFError::Io)?;
 
@@ -89,13 +97,9 @@ impl Mesh {
             }
         }
 
-        let normals = compute_vertex_normals(&triangles, &vertices);
+        let mesh = Mesh::from_vertices_and_triangles(vertices, triangles);
 
-        return Ok(Mesh {
-            vertices: vertices,
-            normals: normals,
-            triangles: triangles,
-        });
+        return Ok(mesh);
     }
 }
 
