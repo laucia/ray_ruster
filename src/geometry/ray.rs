@@ -76,12 +76,16 @@ impl Ray {
     /// Perform intersection testing with box as per
     /// An efficient and robust ray-box intersection algorithm - Williams & All
     /// http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.64.7663
-    pub fn intersect_box(&self, bounds: &[Position; 2]) -> bool {
+    /// More details https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
+    ///
+    /// Return the number of direction to the intersection point
+    /// or none if no intersection can be found
+    pub fn intersect_box(&self, bounds: &[Position; 2]) -> Option<f64> {
         let (mut tmin, mut tmax) = self.min_max_intersection(bounds, 0);
         let (tymin, tymax) = self.min_max_intersection(bounds, 1);
 
         if (tmin > tymax) || (tymin > tmax) {
-            return false;
+            return None;
         };
         if tymin > tmin {
             tmin = tymin
@@ -92,9 +96,23 @@ impl Ray {
         let (tzmin, tzmax) = self.min_max_intersection(bounds, 2);
 
         if (tmin > tzmax) || (tzmin > tmax) {
-            return false;
+            return None;
+        };
+        if tzmin > tmin {
+            tmin = tzmin
+        };
+        if tzmax < tmax {
+            tmax = tzmax
         };
 
-        true
+        // We are only considering the forward intersection with this
+        if tmin >= 0.0 {
+            return Some(tmin);
+        };
+        if tmax < 0.0 {
+            return None;
+        };
+
+        Some(tmax)
     }
 }

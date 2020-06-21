@@ -14,6 +14,7 @@ use ray_ruster::geometry::ray::Ray;
 use ray_ruster::geometry::types::{Direction, Position};
 use ray_ruster::render::config;
 use ray_ruster::render::config::CameraConfig;
+use ray_ruster::render::ray_tracer::clamp_u8;
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -28,6 +29,7 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
     let height = camera_config.height;
 
     let bb = BoundingBox::new(&mesh.vertices);
+    let mut has_printed = false;
 
     for i in 0..width {
         for j in 0..height {
@@ -38,8 +40,38 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
             let ray = Ray::new(camera_position, dir);
             let hit = ray.intersect_box(&bb.bounds);
 
-            if hit {
-                let color = 255;
+            if hit.is_some() {
+                let intersection = ray.position + hit.unwrap() * ray.direction;
+                let mut normal = Direction::new(0.0, 0.0, 0.0);
+
+                // Get the normal of the box face that we hit
+                // This is ugly and should maybe be refactored
+                if (bb.bounds[0][0] - intersection[0]).abs() <= f32::EPSILON.into() {
+                    normal = Direction::new(-1.0, 0.0, 0.0);
+                }
+                if (bb.bounds[1][0] - intersection[0]).abs() <= f32::EPSILON.into() {
+                    normal = Direction::new(1.0, 0.0, 0.0);
+                }
+                if (bb.bounds[0][1] - intersection[1]).abs() <= f32::EPSILON.into() {
+                    normal = Direction::new(0.0, -1.0, 0.0);
+                }
+                if (bb.bounds[1][1] - intersection[1]).abs() <= f32::EPSILON.into() {
+                    normal = Direction::new(0.0, 1.0, 0.0);
+                }
+                if (bb.bounds[0][2] - intersection[2]).abs() <= f32::EPSILON.into() {
+                    normal = Direction::new(-1.0, 0.0, -1.0);
+                }
+                if (bb.bounds[1][2] - intersection[2]).abs() <= f32::EPSILON.into() {
+                    normal = Direction::new(0.0, 0.0, 1.0);
+                }
+                if !has_printed {
+                    println!("{:} {:}", bb.bounds[0], bb.bounds[1]);
+                    println!("{:}", intersection);
+                    has_printed = true;
+                }
+
+                let color =
+                    clamp_u8((camera_position - intersection).normalize().dot(&normal) * 255.0);
                 img.put_pixel(i, height - 1 - j, Rgb([color, color, color]));
             } else {
                 img.put_pixel(i, height - 1 - j, Rgb([0, 0, 0]));

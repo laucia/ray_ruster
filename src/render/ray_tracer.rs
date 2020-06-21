@@ -7,7 +7,7 @@ use crate::geometry::ray::Ray;
 use crate::geometry::types::{Direction, Position};
 use crate::render::config::CameraConfig;
 
-fn clamp_u8(f: f64) -> u8 {
+pub fn clamp_u8(f: f64) -> u8 {
     if f <= 0.0 {
         return 0;
     } else if f >= 255.0 {
