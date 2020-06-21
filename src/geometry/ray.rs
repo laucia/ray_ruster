@@ -6,17 +6,27 @@ use crate::geometry::types::{Direction, Position};
 pub struct Ray {
     pub position: Position,
     pub direction: Direction,
+    inv_direction: Direction,
+    direction_sign: [usize; 3],
 }
 
 impl Ray {
-    pub fn new(position: [f64; 3], direction: [f64; 3]) -> Ray {
+    pub fn new(position: Position, direction: Direction) -> Ray {
+        let i_d = Direction::new(1.0 / direction[0], 1.0 / direction[1], 1.0 / direction[2]);
+
         Ray {
-            position: Position::new(position[0], position[1], position[2]),
-            direction: Direction::new(direction[0], direction[1], direction[2]),
+            position: position,
+            direction: direction,
+            inv_direction: i_d,
+            direction_sign: [
+                (i_d[0] < 0.0) as usize,
+                (i_d[1] < 0.0) as usize,
+                (i_d[2] < 0.0) as usize,
+            ],
         }
     }
 
-    pub fn intersect(
+    pub fn intersect_triangle(
         &self,
         t1: &Position,
         t2: &Position,
@@ -54,5 +64,37 @@ impl Ray {
         }
 
         return Some((self.position + dist_w * self.direction, [dist_u, dist_v]));
+    }
+
+    fn min_max_intersection(&self, bounds: &[Position; 2], i: usize) -> (f64, f64) {
+        return (
+            (bounds[self.direction_sign[i]][i] - self.position[i]) * self.inv_direction[i],
+            (bounds[1 - self.direction_sign[i]][i] - self.position[i]) * self.inv_direction[i],
+        );
+    }
+
+    /// Perform intersection testing with box as per
+    /// An efficient and robust ray-box intersection algorithm - Williams & All
+    /// http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.64.7663
+    pub fn intersect_box(&self, bounds: &[Position; 2]) -> bool {
+        let (mut tmin, mut tmax) = self.min_max_intersection(bounds, 0);
+        let (tymin, tymax) = self.min_max_intersection(bounds, 1);
+
+        if (tmin > tymax) || (tymin > tmax) {
+            return false;
+        };
+        if tymin > tmin {
+            tmin = tymin
+        };
+        if tymax < tmax {
+            tmax = tymax
+        };
+        let (tzmin, tzmax) = self.min_max_intersection(bounds, 2);
+
+        if (tmin > tzmax) || (tzmin > tmax) {
+            return false;
+        };
+
+        true
     }
 }
