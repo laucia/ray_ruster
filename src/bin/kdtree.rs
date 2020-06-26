@@ -8,7 +8,10 @@ extern crate tempfile;
 use gio::prelude::*;
 use gtk::prelude::*;
 use image::{Rgb, RgbImage};
-use ray_ruster::geometry::bounding_box::BoundingBox;
+use ray_ruster::geometry::bounding_box::AxisAlignedBoundingBox;
+use ray_ruster::geometry::kdtree::BoxIntersectIter;
+use ray_ruster::geometry::kdtree::KdTree;
+
 use ray_ruster::geometry::mesh::Mesh;
 use ray_ruster::geometry::ray::Ray;
 use ray_ruster::geometry::types::{Direction, Position};
@@ -28,7 +31,7 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
     let width = camera_config.width;
     let height = camera_config.height;
 
-    let bb = BoundingBox::new(&mesh.vertices);
+    let kdt = Box::new(KdTree::from_vertices(&mesh.vertices));
     let mut has_printed = false;
 
     for i in 0..width {
@@ -38,9 +41,20 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
                 + camera_config.z)
                 .normalize();
             let ray = Ray::new(camera_position, dir);
-            let hit = ray.intersect_box(&bb.bounds);
+            let box_iter = BoxIntersectIter::new(&ray, &kdt);
+            let kd_node = box_iter
+                //.inspect(|x| println!("[{:},{:}]looking at: {:?}", i, j, x.bounding_box.bounds))
+                .last();
 
-            if hit.is_some() {
+            if kd_node.is_some() {
+                let bb = &kd_node.unwrap().bounding_box;
+                let hit = ray.intersect_box(&bb.bounds);
+                if hit.is_none() {
+                    println!("OUPS");
+                    img.put_pixel(i, height - 1 - j, Rgb([255, 0, 0]));
+                    continue;
+                }
+
                 let intersection = ray.position + hit.unwrap() * ray.direction;
                 let mut normal = Direction::new(0.0, 0.0, 0.0);
 
@@ -70,9 +84,14 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
                     has_printed = true;
                 }
 
-                let color =
+                let color = kd_node.unwrap().color;
+                let shade =
                     clamp_u8((camera_position - intersection).normalize().dot(&normal) * 255.0);
-                img.put_pixel(i, height - 1 - j, Rgb([color, color, color]));
+                img.put_pixel(
+                    i,
+                    height - 1 - j,
+                    Rgb([color[0] * shade, color[1] * shade, color[2] * shade]),
+                );
             } else {
                 img.put_pixel(i, height - 1 - j, Rgb([0, 0, 0]));
             }
@@ -84,7 +103,7 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
 
 fn main() {
     let mesh = Mesh::load_off_file(Path::new("data/ram.off")).unwrap();
-    let bb = BoundingBox::new(&mesh.vertices);
+    let bb = AxisAlignedBoundingBox::new(&mesh.vertices);
     let rot = na::Rotation3::face_towards(
         &Direction::new(-1.0, 1.0, 0.0),
         &Direction::new(0.0, 0.0, 1.0),

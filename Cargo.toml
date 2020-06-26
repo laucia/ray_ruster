@@ -19,6 +19,7 @@ image = "0.23"
 nalgebra = "0.21"
 regex = "1"
 tempfile = "3"
+rand = "0.7"
 
 [dependencies.gtk]
 version = "0.8.1"
