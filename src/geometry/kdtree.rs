@@ -1,8 +1,6 @@
-extern crate rand;
 use crate::geometry::bounding_box::AxisAlignedBoundingBox;
 use crate::geometry::ray::Ray;
 use crate::geometry::types::Position;
-use rand::Rng;
 
 pub struct KdTree {
     pub bounding_box: AxisAlignedBoundingBox,
@@ -11,24 +9,36 @@ pub struct KdTree {
 
     // leaf
     vertices_index: Option<Vec<usize>>,
-
-    // Debug
-    pub color: [u8; 3],
-}
-
-fn make_rng_color() -> [u8; 3] {
-    let mut rng = rand::thread_rng();
-    [rng.gen(), rng.gen(), rng.gen()]
 }
 
 impl KdTree {
+    fn new_node(
+        bb: AxisAlignedBoundingBox,
+        left: Option<Box<KdTree>>,
+        right: Option<Box<KdTree>>,
+    ) -> KdTree {
+        KdTree {
+            bounding_box: bb,
+            left: left,
+            right: right,
+            vertices_index: None,
+        }
+    }
+
+    fn new_leaf(bb: AxisAlignedBoundingBox, vertices_index: Option<Vec<usize>>) -> KdTree {
+        KdTree {
+            bounding_box: bb,
+            left: None,
+            right: None,
+            vertices_index: vertices_index,
+        }
+    }
+
     pub fn from_vertices(vertices: &Vec<Position>) -> KdTree {
         let bb = AxisAlignedBoundingBox::new(vertices);
 
         let largest_dim = bb.largest_dim();
         let median = get_median(largest_dim, &vertices);
-
-        println!("median: dim {:?}, median {:?}", largest_dim, median);
 
         let right: Vec<(usize, Position)> = vertices
             .iter()
@@ -51,37 +61,28 @@ impl KdTree {
 
         let (left_bb, right_bb) = bb.split(largest_dim, median).unwrap();
 
-        println!("{:} in right", right.len());
-        println!("{:} in left", left.len());
-
-        KdTree {
-            bounding_box: bb,
-            left: Some(Box::from(KdTree::from_vertices_internal(left_bb, left))),
-            right: Some(Box::from(KdTree::from_vertices_internal(right_bb, right))),
-            vertices_index: None,
-            color: make_rng_color(),
-        }
+        KdTree::new_node(
+            bb,
+            Some(Box::from(KdTree::from_vertices_internal(left_bb, left))),
+            Some(Box::from(KdTree::from_vertices_internal(right_bb, right))),
+        )
     }
 
     fn from_vertices_internal(
         bb: AxisAlignedBoundingBox,
         index_vertices_pairs: Vec<(usize, Position)>,
     ) -> KdTree {
-        println!("children box is: {:?}", bb.bounds);
         // Terminal condition
         if index_vertices_pairs.len() < 10 {
-            return KdTree {
-                bounding_box: bb,
-                left: None,
-                right: None,
-                vertices_index: Some(
+            return KdTree::new_leaf(
+                bb,
+                Some(
                     index_vertices_pairs
                         .iter()
                         .map(|(i, _)| i.clone())
                         .collect(),
                 ),
-                color: make_rng_color(),
-            };
+            );
         }
 
         let largest_dim = bb.largest_dim();
@@ -110,13 +111,11 @@ impl KdTree {
 
         let (left_bb, right_bb) = bb.split(largest_dim, median).unwrap();
 
-        KdTree {
-            bounding_box: bb,
-            left: Some(Box::from(KdTree::from_vertices_internal(left_bb, left))),
-            right: Some(Box::from(KdTree::from_vertices_internal(right_bb, right))),
-            vertices_index: None,
-            color: make_rng_color(),
-        }
+        KdTree::new_node(
+            bb,
+            Some(Box::from(KdTree::from_vertices_internal(left_bb, left))),
+            Some(Box::from(KdTree::from_vertices_internal(right_bb, right))),
+        )
     }
 
     pub fn is_leaf(&self) -> bool {

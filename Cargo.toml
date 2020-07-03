@@ -10,10 +10,6 @@ edition = "2018"
 name = "ray_ruster"
 path = "src/lib.rs"
 
-[[bin]]
-name = "ray_ruster"
-path = "src/main.rs"
-
 [dependencies]
 image = "0.23"
 nalgebra = "0.21"
