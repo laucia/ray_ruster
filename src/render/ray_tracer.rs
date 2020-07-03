@@ -7,7 +7,7 @@ use crate::geometry::ray::Ray;
 use crate::geometry::types::{Direction, Position};
 use crate::render::config::CameraConfig;
 
-fn clamp_u8(f: f64) -> u8 {
+pub fn clamp_u8(f: f64) -> u8 {
     if f <= 0.0 {
         return 0;
     } else if f >= 255.0 {
@@ -30,7 +30,7 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
     let mut img = RgbImage::new(camera_config.width, camera_config.height);
 
     let step_x = camera_config.fov.tan() / (camera_config.width as f64);
-    let step_z =
+    let step_y =
         camera_config.fov.tan() / camera_config.aspect_ratio / (camera_config.height as f64);
     let camera_position = camera_config.camera_position;
     let width = camera_config.width;
@@ -39,13 +39,10 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
     for i in 0..width {
         for j in 0..height {
             let dir = ((i as f64 - (width as f64) / 2.0) * step_x * camera_config.x
-                + (j as f64 - (height as f64) / 2.0) * step_z * camera_config.z
-                + camera_config.y)
+                + (j as f64 - (height as f64) / 2.0) * step_y * camera_config.y
+                + camera_config.z)
                 .normalize();
-            let vertex = Ray {
-                position: camera_position,
-                direction: dir,
-            };
+            let ray = Ray::new(camera_position, dir);
 
             let mut closest_intersection = Position::new(f64::NAN, f64::NAN, f64::NAN);
             let mut closest_normal = Direction::new(f64::NAN, f64::NAN, f64::NAN);
@@ -56,7 +53,7 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
                 let ref t2 = mesh.vertices[triangle[1]];
                 let ref t3 = mesh.vertices[triangle[2]];
 
-                let intersection_opt = vertex.intersect(t1, t2, t3);
+                let intersection_opt = ray.intersect_triangle(t1, t2, t3);
                 if intersection_opt.is_some() {
                     let (intersection_point, bar_coord) = intersection_opt.unwrap();
                     // Init the value

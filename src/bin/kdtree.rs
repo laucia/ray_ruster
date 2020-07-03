@@ -1,0 +1,162 @@
+extern crate gio;
+extern crate gtk;
+extern crate image;
+extern crate nalgebra as na;
+extern crate rand;
+extern crate ray_ruster;
+extern crate tempfile;
+use gio::prelude::*;
+use gtk::prelude::*;
+use image::{Rgb, RgbImage};
+use ray_ruster::geometry::bounding_box::AxisAlignedBoundingBox;
+use ray_ruster::geometry::kdtree::BoxIntersectIter;
+use ray_ruster::geometry::kdtree::KdTree;
+
+use rand::prelude::*;
+use ray_ruster::geometry::mesh::Mesh;
+use ray_ruster::geometry::ray::Ray;
+use ray_ruster::geometry::types::{Direction, Position};
+use ray_ruster::render::config;
+use ray_ruster::render::config::CameraConfig;
+use ray_ruster::render::ray_tracer::clamp_u8;
+use std::path::Path;
+use tempfile::tempdir;
+
+/// Get the normal of the box face that we hit
+/// This assumes that the intersection lies on the box,
+/// otherwise this will return a 0 vector.
+fn get_box_normal_debug(intersection: &Position, bb: &AxisAlignedBoundingBox) -> Direction {
+    let mut normal = Direction::new(0.0, 0.0, 0.0);
+
+    // This is ugly and should maybe be refactored
+    if (bb.bounds[0][0] - intersection[0]).abs() <= f32::EPSILON.into() {
+        normal = Direction::new(-1.0, 0.0, 0.0);
+    }
+    if (bb.bounds[1][0] - intersection[0]).abs() <= f32::EPSILON.into() {
+        normal = Direction::new(1.0, 0.0, 0.0);
+    }
+    if (bb.bounds[0][1] - intersection[1]).abs() <= f32::EPSILON.into() {
+        normal = Direction::new(0.0, -1.0, 0.0);
+    }
+    if (bb.bounds[1][1] - intersection[1]).abs() <= f32::EPSILON.into() {
+        normal = Direction::new(0.0, 1.0, 0.0);
+    }
+    if (bb.bounds[0][2] - intersection[2]).abs() <= f32::EPSILON.into() {
+        normal = Direction::new(0.0, 0.0, -1.0);
+    }
+    if (bb.bounds[1][2] - intersection[2]).abs() <= f32::EPSILON.into() {
+        normal = Direction::new(0.0, 0.0, 1.0);
+    }
+    normal
+}
+
+fn render_kdtree(kdt: &Box<KdTree>, max_depth: usize, camera_config: &CameraConfig) -> RgbImage {
+    let mut img = RgbImage::new(camera_config.width, camera_config.height);
+
+    let step_x = camera_config.fov.tan() / (camera_config.width as f64);
+    let step_y =
+        camera_config.fov.tan() / camera_config.aspect_ratio / (camera_config.height as f64);
+    let camera_position = camera_config.camera_position;
+    let width = camera_config.width;
+    let height = camera_config.height;
+
+    for i in 0..width {
+        for j in 0..height {
+            let dir = ((i as f64 - (width as f64) / 2.0) * step_x * camera_config.x
+                + (j as f64 - (height as f64) / 2.0) * step_y * camera_config.y
+                + camera_config.z)
+                .normalize();
+            let ray = Ray::new(camera_position, dir);
+            let box_iter = BoxIntersectIter::new(&ray, &kdt);
+            let kd_node = box_iter
+                //.inspect(|x| println!("[{:},{:}]looking at: {:?}", i, j, x.bounding_box.bounds))
+                .take(max_depth)
+                .last();
+
+            if kd_node.is_some() {
+                let bb = &kd_node.unwrap().bounding_box;
+                let hit = ray.intersect_box(&bb.bounds);
+                if hit.is_none() {
+                    println!("OUPS");
+                    img.put_pixel(i, height - 1 - j, Rgb([255, 0, 0]));
+                    continue;
+                }
+
+                let intersection = ray.position + hit.unwrap() * ray.direction;
+                let normal = get_box_normal_debug(&intersection, bb);
+
+                // Generate a random color from the box pointer
+                let my_num_ptr: *const KdTree = &**kd_node.unwrap();
+                let random_seed = my_num_ptr as u64;
+                let mut color_gen = rand::rngs::StdRng::seed_from_u64(random_seed);
+
+                let color: [u8; 3] = [color_gen.gen(), color_gen.gen(), color_gen.gen()];
+                let shade = (camera_position - intersection).normalize().dot(&normal);
+                img.put_pixel(
+                    i,
+                    height - 1 - j,
+                    Rgb([
+                        clamp_u8(color[0] as f64 * shade),
+                        clamp_u8(color[1] as f64 * shade),
+                        clamp_u8(color[2] as f64 * shade),
+                    ]),
+                );
+            } else {
+                img.put_pixel(i, height - 1 - j, Rgb([0, 0, 0]));
+            }
+        }
+    }
+
+    return img;
+}
+
+fn main() {
+    let mesh = Mesh::load_off_file(Path::new("data/ram.off")).unwrap();
+    let kdt = Box::new(KdTree::from_vertices(&mesh.vertices));
+
+    let rot = na::Rotation3::face_towards(
+        &Direction::new(-1.0, 1.0, 0.0),
+        &Direction::new(0.0, 0.0, 1.0),
+    );
+    let camera_config = config::CameraConfig {
+        camera_position: rot * Position::new(0.0, 0.5, -10.0),
+        x: rot * Direction::new(1.0, 0.0, 0.0),
+        y: rot * Direction::new(0.0, 1.0, 0.0),
+        z: rot * Direction::new(0.0, 0.0, 1.0),
+        fov: 60.0,
+        aspect_ratio: 1.0,
+        width: 400,
+        height: 400,
+    };
+
+    // Render all images
+    let dir = tempdir().ok().unwrap();
+    let mut paths = Vec::new();
+
+    for depth in 1..7 {
+        let img = render_kdtree(&kdt, depth, &camera_config);
+        let file_path = dir
+            .path()
+            .join(format!("render_{depth}.png", depth = depth));
+        let _ = img.save(Path::new(&file_path));
+        paths.push(file_path)
+    }
+
+    let application = gtk::Application::new(Some("main.ray_ruster"), Default::default())
+        .expect("failed to initialize GTK application");
+
+    application.connect_activate(move |app| {
+        let window = gtk::ApplicationWindow::new(app);
+        window.set_title("ray_ruster");
+        window.set_default_size(350, 70);
+        let grid = gtk::Grid::new();
+        for (i, path) in paths.iter().enumerate() {
+            let im = gtk::Image::new_from_file(Path::new(path));
+            grid.attach(&im, (i % 3) as i32, (i / 3) as i32, 1, 1);
+        }
+        window.add(&grid);
+        window.show_all();
+    });
+
+    application.run(&[]);
+}

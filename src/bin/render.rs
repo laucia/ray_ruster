@@ -1,5 +1,6 @@
 extern crate gio;
 extern crate gtk;
+extern crate nalgebra as na;
 extern crate ray_ruster;
 extern crate tempfile;
 
@@ -20,11 +21,15 @@ fn main() {
 
     let mesh = Mesh::load_off_file(Path::new("data/ram.off")).unwrap();
     println!("{:?}: loaded OFF model", start.elapsed());
+    let rot = na::Rotation3::face_towards(
+        &Direction::new(-1.0, 1.0, 0.0),
+        &Direction::new(0.0, 0.0, 1.0),
+    );
     let camera_config = config::CameraConfig {
-        camera_position: Position::new(0.0, -10.0, 0.5),
-        x: Direction::new(1.0, 0.0, 0.0),
-        y: Direction::new(0.0, 1.0, 0.0),
-        z: Direction::new(0.0, 0.0, 1.0),
+        camera_position: rot * Position::new(0.0, 0.5, -10.0),
+        x: rot * Direction::new(1.0, 0.0, 0.0),
+        y: rot * Direction::new(0.0, 1.0, 0.0),
+        z: rot * Direction::new(0.0, 0.0, 1.0),
         fov: 60.0,
         aspect_ratio: 4.0 / 3.0,
         width: 400,
