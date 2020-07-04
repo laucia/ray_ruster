@@ -1,12 +1,14 @@
 extern crate gio;
 extern crate gtk;
-extern crate image;
 extern crate nalgebra as na;
-extern crate rand;
 extern crate ray_ruster;
 extern crate tempfile;
+
 use gio::prelude::*;
 use gtk::prelude::*;
+use std::path::Path;
+use tempfile::tempdir;
+
 use ray_ruster::geometry::kdtree::BoxIntersectIter;
 use ray_ruster::geometry::kdtree::KdTree;
 use ray_ruster::geometry::kdtree::KdTreeLeafIter;
@@ -14,9 +16,8 @@ use ray_ruster::geometry::mesh::Mesh;
 use ray_ruster::geometry::ray::Ray;
 use ray_ruster::geometry::types::{Direction, Position};
 use ray_ruster::render::config;
+use ray_ruster::render::image;
 use ray_ruster::render::ray_tracer;
-use std::path::Path;
-use tempfile::tempdir;
 
 fn kdt_to_mesh(kdt: &Box<KdTree>, mesh: &Mesh) -> Mesh {
     let vertices_index: Vec<usize> = KdTreeLeafIter::new(kdt)
@@ -88,7 +89,10 @@ fn main() {
 
     for (depth, kdt_node) in box_iter.take(9).enumerate() {
         let mesh = kdt_to_mesh(kdt_node, &mesh);
-        let img = ray_tracer::naive_render(&mesh, &camera_config, &rendering_config);
+        let img = image::render_image(
+            ray_tracer::make_naive_ray_tracer(&mesh, &camera_config, &rendering_config),
+            &camera_config,
+        );
         let file_path = dir
             .path()
             .join(format!("render_{depth}.png", depth = depth));

@@ -12,6 +12,7 @@ use std::time::Instant;
 use ray_ruster::geometry::mesh::Mesh;
 use ray_ruster::geometry::types::{Direction, Position};
 use ray_ruster::render::config;
+use ray_ruster::render::image;
 use ray_ruster::render::ray_tracer;
 
 use tempfile::tempdir;
@@ -38,7 +39,10 @@ fn main() {
     let rendering_config = config::RenderingConfig {
         normal_mode: config::NormalMode::Phong,
     };
-    let img = ray_tracer::naive_render(&mesh, &camera_config, &rendering_config);
+    let img = image::render_image(
+        ray_tracer::make_naive_ray_tracer(&mesh, &camera_config, &rendering_config),
+        &camera_config,
+    );
     println!("{:?}: rendering done", start.elapsed());
     let dir = tempdir().ok().unwrap();
     let file_path = dir.path().join("render.png");
