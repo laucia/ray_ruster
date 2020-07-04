@@ -1,7 +1,5 @@
 extern crate image;
 
-use self::image::{Rgb, RgbImage};
-
 use crate::geometry::mesh::Mesh;
 use crate::geometry::ray::Ray;
 use crate::geometry::types::{Direction, Position};
