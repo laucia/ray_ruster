@@ -1,6 +1,7 @@
 extern crate nalgebra as na;
 extern crate regex;
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::io::BufRead;
@@ -9,13 +10,18 @@ use std::path::Path;
 
 use crate::geometry::types::{Direction, Position, Triangle};
 
+/// This class is responsible for holding the geometry of the objects, and provide
+/// easy look-ups of things like normals for both triangles and vertices
 #[derive(Debug)]
 pub struct Mesh {
     pub vertices: Vec<Position>,
-    pub normals: Vec<Direction>,
+    pub vertex_normals: Vec<Direction>,
     pub triangles: Vec<Triangle>,
+    pub triangle_normals: Vec<Direction>,
+    pub vertex_index_triangle_indices_map: HashMap<usize, Vec<usize>>,
 }
 
+/// This defines the errors that can occure when parsing an OFF file
 #[derive(Debug)]
 pub enum OFFError {
     Io(io::Error),
@@ -27,11 +33,26 @@ pub enum OFFError {
 
 impl Mesh {
     pub fn from_vertices_and_triangles(vertices: Vec<Position>, triangles: Vec<Triangle>) -> Mesh {
-        let normals = compute_vertex_normals(&triangles, &vertices);
+        // Calculate normals
+        let triangle_normals = compute_triangle_normals(&triangles, &vertices);
+        let vertex_normals = compute_vertex_normals(&triangles, &vertices, &triangle_normals);
+
+        // Build maping
+        let mut vertex_index_triangle_indices_map: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (triangle_index, triangle) in triangles.iter().enumerate() {
+            for i in 0..3 {
+                let registry_entry = vertex_index_triangle_indices_map
+                    .entry(triangle[i])
+                    .or_insert(Vec::<usize>::new());
+                registry_entry.push(triangle_index);
+            }
+        }
         Mesh {
             vertices: vertices,
-            normals: normals,
+            vertex_normals: vertex_normals,
             triangles: triangles,
+            triangle_normals: triangle_normals,
+            vertex_index_triangle_indices_map: vertex_index_triangle_indices_map,
         }
     }
     pub fn load_off_file(path: &Path) -> Result<Mesh, OFFError> {
@@ -103,15 +124,28 @@ impl Mesh {
     }
 }
 
-fn compute_vertex_normals(triangles: &[Triangle], vertices: &[Position]) -> Vec<Direction> {
-    let triangle_normals: Vec<Direction> = triangles
+/// Compute the normals of the triangles.
+/// This defines the orientation of the triangles
+/// calculated normals are normalized vectors (length 1.0)
+fn compute_triangle_normals(triangles: &[Triangle], vertices: &[Position]) -> Vec<Direction> {
+    triangles
         .iter()
         .map(|t| {
             let u = vertices[t[1]] - vertices[t[0]];
             let v = vertices[t[2]] - vertices[t[0]];
             u.cross(&v).normalize()
         })
-        .collect();
+        .collect()
+}
+
+/// Compute the normals of vertices
+/// by averaging the normals of neighbouring triangles
+/// calculated normals are normalized vectors (length 1.0)
+fn compute_vertex_normals(
+    triangles: &[Triangle],
+    vertices: &[Position],
+    triangle_normals: &[Direction],
+) -> Vec<Direction> {
     let mut vertex_normals: Vec<Direction> = Vec::with_capacity(0);
     vertex_normals.resize(vertices.len(), Direction::new(0.0, 0.0, 0.0));
 
