@@ -5,7 +5,7 @@ use self::image::{Rgb, RgbImage};
 use crate::geometry::mesh::Mesh;
 use crate::geometry::ray::Ray;
 use crate::geometry::types::{Direction, Position};
-use crate::render::config::CameraConfig;
+use crate::render::config::{CameraConfig, NormalMode, RenderingConfig};
 
 pub fn clamp_u8(f: f64) -> u8 {
     if f <= 0.0 {
@@ -26,7 +26,11 @@ fn interpolation_n_phong(
     return (*n1 * (1.0 - coord[0] - coord[1]) + coord[0] * *n2 + coord[1] * *n3).normalize();
 }
 
-pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
+pub fn naive_render(
+    mesh: &Mesh,
+    camera_config: &CameraConfig,
+    rendering_config: &RenderingConfig,
+) -> RgbImage {
     let mut img = RgbImage::new(camera_config.width, camera_config.height);
 
     let step_x = camera_config.fov.tan() / (camera_config.width as f64);
@@ -48,7 +52,7 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
             let mut closest_normal = Direction::new(f64::NAN, f64::NAN, f64::NAN);
             let mut hit = false;
 
-            for triangle in mesh.triangles.iter() {
+            for (triangle_index, triangle) in mesh.triangles.iter().enumerate() {
                 let ref t1 = mesh.vertices[triangle[0]];
                 let ref t2 = mesh.vertices[triangle[1]];
                 let ref t3 = mesh.vertices[triangle[2]];
@@ -62,12 +66,15 @@ pub fn render(mesh: &Mesh, camera_config: &CameraConfig) -> RgbImage {
                             >= (intersection_point - camera_position).norm_squared()
                     {
                         closest_intersection = intersection_point;
-                        closest_normal = interpolation_n_phong(
-                            &mesh.normals[triangle[0]],
-                            &mesh.normals[triangle[1]],
-                            &mesh.normals[triangle[2]],
-                            &bar_coord,
-                        );
+                        closest_normal = match rendering_config.normal_mode {
+                            NormalMode::Phong => interpolation_n_phong(
+                                &mesh.vertex_normals[triangle[0]],
+                                &mesh.vertex_normals[triangle[1]],
+                                &mesh.vertex_normals[triangle[2]],
+                                &bar_coord,
+                            ),
+                            NormalMode::Triangle => mesh.triangle_normals[triangle_index],
+                        }
                     }
                     if !hit {
                         hit = true;

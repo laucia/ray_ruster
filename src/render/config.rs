@@ -10,3 +10,12 @@ pub struct CameraConfig {
     pub width: u32,
     pub height: u32,
 }
+
+pub enum NormalMode {
+    Phong,
+    Triangle,
+}
+
+pub struct RenderingConfig {
+    pub normal_mode: NormalMode,
+}

@@ -35,7 +35,10 @@ fn main() {
         width: 400,
         height: 300,
     };
-    let img = ray_tracer::render(&mesh, &camera_config);
+    let rendering_config = config::RenderingConfig {
+        normal_mode: config::NormalMode::Phong,
+    };
+    let img = ray_tracer::naive_render(&mesh, &camera_config, &rendering_config);
     println!("{:?}: rendering done", start.elapsed());
     let dir = tempdir().ok().unwrap();
     let file_path = dir.path().join("render.png");

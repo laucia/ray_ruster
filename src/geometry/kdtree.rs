@@ -1,6 +1,7 @@
 use crate::geometry::bounding_box::AxisAlignedBoundingBox;
 use crate::geometry::ray::Ray;
 use crate::geometry::types::Position;
+use std::collections::VecDeque;
 
 pub struct KdTree {
     pub bounding_box: AxisAlignedBoundingBox,
@@ -8,7 +9,7 @@ pub struct KdTree {
     right: Option<Box<KdTree>>,
 
     // leaf
-    vertices_index: Option<Vec<usize>>,
+    pub vertices_index: Option<Vec<usize>>,
 }
 
 impl KdTree {
@@ -203,5 +204,38 @@ impl<'a, 'b> Iterator for BoxIntersectIter<'a, 'b> {
         }
 
         return Some(cur_node);
+    }
+}
+
+pub struct KdTreeLeafIter<'a> {
+    pending: VecDeque<&'a Box<KdTree>>,
+}
+
+impl<'a> Iterator for KdTreeLeafIter<'a> {
+    type Item = &'a Box<KdTree>;
+
+    fn next(&mut self) -> Option<&'a Box<KdTree>> {
+        while self.pending.len() > 0 {
+            let current = self.pending.pop_back().unwrap();
+            if current.is_leaf() {
+                return Some(current);
+            }
+            if current.left.is_some() {
+                self.pending.push_back(&current.left.as_ref().unwrap())
+            }
+            if current.right.is_some() {
+                self.pending.push_back(&current.right.as_ref().unwrap())
+            }
+        }
+        return None;
+    }
+}
+
+impl<'a> KdTreeLeafIter<'a> {
+    pub fn new(first_node: &'a Box<KdTree>) -> KdTreeLeafIter<'a> {
+        let mut pending = VecDeque::new();
+        pending.push_back(first_node);
+
+        KdTreeLeafIter { pending: pending }
     }
 }
