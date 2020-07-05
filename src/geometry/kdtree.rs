@@ -1,7 +1,10 @@
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
+use std::collections::VecDeque;
+
 use crate::geometry::bounding_box::AxisAlignedBoundingBox;
 use crate::geometry::ray::Ray;
 use crate::geometry::types::Position;
-use std::collections::VecDeque;
 
 pub struct KdTree {
     pub bounding_box: AxisAlignedBoundingBox,
@@ -134,72 +137,122 @@ fn get_median(dim: usize, vertices: &Vec<Position>) -> f64 {
     median
 }
 
-pub struct BoxIntersectIter<'a, 'b> {
-    ray: &'a Ray,
-    next_node: Option<&'b Box<KdTree>>,
+pub struct BoxIntersect<'a> {
+    pub distance: f64,
+    pub node: &'a Box<KdTree>,
 }
 
-impl<'a, 'b> BoxIntersectIter<'a, 'b> {
-    pub fn new(ray: &'a Ray, first_node: &'b Box<KdTree>) -> BoxIntersectIter<'a, 'b> {
-        let hit = ray.intersect_box(&(*first_node).bounding_box.bounds);
-        if hit.is_some() {
-            return BoxIntersectIter {
-                ray: ray,
-                next_node: Some(first_node),
-            };
-        } else {
-            return BoxIntersectIter {
-                ray: ray,
-                next_node: None,
-            };
-        }
+impl<'a> Ord for BoxIntersect<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
     }
 }
 
-impl<'a, 'b> Iterator for BoxIntersectIter<'a, 'b> {
-    type Item = &'b Box<KdTree>;
+impl<'a> PartialOrd for BoxIntersect<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        // We are reversing the order to get a min heap
+        other.distance.partial_cmp(&self.distance)
+    }
+}
 
-    fn next(&mut self) -> Option<&'b Box<KdTree>> {
-        if self.next_node.is_none() {
+impl<'a> Eq for BoxIntersect<'a> {}
+
+impl<'a> PartialEq for BoxIntersect<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.distance == other.distance
+    }
+}
+
+/// Yields all the nodes of the tree intersecting with the ray
+/// ordered by depth and intersection distance, ascending
+pub struct BoxIntersectIter<'a> {
+    ray: &'a Ray,
+    next_nodes: BinaryHeap<BoxIntersect<'a>>,
+}
+
+impl<'a, 'b> BoxIntersectIter<'a> {
+    pub fn new(ray: &'a Ray, first_node: &'a Box<KdTree>) -> BoxIntersectIter<'a> {
+        let mut heap = BinaryHeap::new();
+        let hit = ray.intersect_box(&(*first_node).bounding_box.bounds);
+        if hit.is_some() {
+            heap.push(BoxIntersect {
+                distance: hit.unwrap(),
+                node: first_node,
+            })
+        }
+        BoxIntersectIter {
+            ray: ray,
+            next_nodes: heap,
+        }
+    }
+    pub fn closest_branch(self) -> impl Iterator<Item = BoxIntersect<'a>> {
+        self.scan(0, |predecessor_is_leaf, intersect: BoxIntersect<'_>| {
+            if *predecessor_is_leaf == 1 {
+                return None;
+            }
+            if intersect.node.is_leaf() {
+                *predecessor_is_leaf += 1
+            }
+            Some(intersect)
+        })
+    }
+
+    /// Yields all the leaves of the tree intersecting with the ray
+    /// ordered by intersection distance, ascending
+    pub fn leaves(self) -> impl Iterator<Item = BoxIntersect<'a>> {
+        self.filter(|x| x.node.is_leaf())
+    }
+}
+
+impl<'a> Iterator for BoxIntersectIter<'a> {
+    type Item = BoxIntersect<'a>;
+
+    fn next(&mut self) -> Option<BoxIntersect<'a>> {
+        let next_node = self.next_nodes.pop();
+        if next_node.is_none() {
             return None;
         }
 
-        let cur_node = self.next_node.unwrap();
+        let cur_node = next_node.unwrap();
 
         // We have reached a leaf we can stop
-        if cur_node.is_leaf() {
-            self.next_node = None;
+        if cur_node.node.is_leaf() {
             return Some(cur_node);
         }
 
         // Otherwise let's check which child is the next node
         // before returning the node
-        let left_child = (*cur_node).left.as_ref().unwrap();
-        let right_child = (*cur_node).right.as_ref().unwrap();
+        let left_child = (*cur_node.node).left.as_ref().unwrap();
+        let right_child = (*cur_node.node).right.as_ref().unwrap();
         let hit_left = self.ray.intersect_box(&(*left_child).bounding_box.bounds);
         let hit_right = self.ray.intersect_box(&(*right_child).bounding_box.bounds);
-
-        if hit_right.is_none() && hit_left.is_none() {
-            return None;
-        }
 
         match (hit_left, hit_right) {
             (None, None) => {
                 println!("Problem with parent box spliting");
                 return None;
             }
-            (Some(_), None) => {
-                self.next_node = Some(&left_child);
+            (Some(distance_left), None) => {
+                self.next_nodes.push(BoxIntersect {
+                    distance: distance_left,
+                    node: &left_child,
+                });
             }
-            (None, Some(_)) => {
-                self.next_node = Some(&right_child);
+            (None, Some(distance_right)) => {
+                self.next_nodes.push(BoxIntersect {
+                    distance: distance_right,
+                    node: &right_child,
+                });
             }
-            (Some(i), Some(j)) => {
-                if i < j {
-                    self.next_node = Some(&left_child);
-                } else {
-                    self.next_node = Some(&right_child);
-                }
+            (Some(distance_left), Some(distance_right)) => {
+                self.next_nodes.push(BoxIntersect {
+                    distance: distance_left,
+                    node: &left_child,
+                });
+                self.next_nodes.push(BoxIntersect {
+                    distance: distance_right,
+                    node: &right_child,
+                });
             }
         }
 
@@ -207,7 +260,12 @@ impl<'a, 'b> Iterator for BoxIntersectIter<'a, 'b> {
     }
 }
 
+/// Return all the leafs under a given KDTree Node
+///
+/// This iterator is used mostly for debugging, and
+/// performs a DFS traversal
 pub struct KdTreeLeafIter<'a> {
+    /// LIFO queue used for DFS
     pending: VecDeque<&'a Box<KdTree>>,
 }
 

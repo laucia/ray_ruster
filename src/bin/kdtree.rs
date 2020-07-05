@@ -56,25 +56,22 @@ fn make_box_tracer<'a>(
     camera_config: &'a CameraConfig,
 ) -> impl Fn(Ray) -> [u8; 3] + 'a {
     move |ray| {
-        let box_iter = BoxIntersectIter::new(&ray, &kdt);
-        let kd_node = box_iter
+        let box_iter = BoxIntersectIter::new(&ray, &kdt).closest_branch();
+        let box_intersect = box_iter
             //.inspect(|x| println!("[{:},{:}]looking at: {:?}", i, j, x.bounding_box.bounds))
             .take(max_depth)
             .last();
 
-        if kd_node.is_some() {
-            let bb = &kd_node.unwrap().bounding_box;
-            let hit = ray.intersect_box(&bb.bounds);
-            if hit.is_none() {
-                println!("OUPS");
-                return [255, 0, 0];
-            }
+        if box_intersect.is_some() {
+            let ref hit = box_intersect.as_ref().unwrap().distance;
+            let ref kd_node = box_intersect.as_ref().unwrap().node;
+            let ref bb = kd_node.bounding_box;
 
-            let intersection = ray.position + hit.unwrap() * ray.direction;
+            let intersection = ray.position + *hit * ray.direction;
             let normal = get_box_normal_debug(&intersection, bb);
 
             // Generate a random color from the box pointer
-            let my_num_ptr: *const KdTree = &**kd_node.unwrap();
+            let my_num_ptr: *const KdTree = &***kd_node;
             let random_seed = my_num_ptr as u64;
             let mut color_gen = rand::rngs::StdRng::seed_from_u64(random_seed);
 
@@ -108,15 +105,15 @@ fn main() {
         z: rot * Direction::new(0.0, 0.0, 1.0),
         fov: 60.0,
         aspect_ratio: 1.0,
-        width: 400,
-        height: 400,
+        width: 300,
+        height: 300,
     };
 
     // Render all images
     let dir = tempdir().ok().unwrap();
     let mut paths = Vec::new();
 
-    for depth in 1..7 {
+    for depth in 1..10 {
         let img = image::render_image(make_box_tracer(&kdt, depth, &camera_config), &camera_config);
         let file_path = dir
             .path()
