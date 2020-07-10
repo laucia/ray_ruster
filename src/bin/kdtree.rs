@@ -12,8 +12,7 @@ use std::path::Path;
 use tempfile::tempdir;
 
 use ray_ruster::geometry::bounding_box::AxisAlignedBoundingBox;
-use ray_ruster::geometry::kdtree::BoxIntersectIter;
-use ray_ruster::geometry::kdtree::KdTree;
+use ray_ruster::geometry::kdtree::{iter_intersect_ray, KdTree};
 use ray_ruster::geometry::mesh::Mesh;
 use ray_ruster::geometry::ray::Ray;
 use ray_ruster::geometry::types::{Direction, Position};
@@ -56,7 +55,7 @@ fn make_box_tracer<'a>(
     camera_config: &'a CameraConfig,
 ) -> impl Fn(Ray) -> [u8; 3] + 'a {
     move |ray| {
-        let box_iter = BoxIntersectIter::new(&ray, &kdt).closest_branch();
+        let box_iter = iter_intersect_ray(&kdt, &ray).closest_branch();
         let box_intersect = box_iter
             //.inspect(|x| println!("[{:},{:}]looking at: {:?}", i, j, x.bounding_box.bounds))
             .take(max_depth)
@@ -92,7 +91,7 @@ fn make_box_tracer<'a>(
 
 fn main() {
     let mesh = Mesh::load_off_file(Path::new("data/ram.off")).unwrap();
-    let kdt = Box::new(KdTree::from_vertices(&mesh.vertices));
+    let kdt = KdTree::from_mesh(&mesh);
 
     let rot = na::Rotation3::face_towards(
         &Direction::new(-1.0, 1.0, 0.0),

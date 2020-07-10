@@ -1,6 +1,6 @@
 extern crate image;
 
-use crate::geometry::kdtree::{BoxIntersectIter, KdTree, KdTreeLeafIter};
+use crate::geometry::kdtree::{iter_intersect_ray, KdTree};
 use crate::geometry::mesh::Mesh;
 use crate::geometry::ray::Ray;
 use crate::geometry::types::{Direction, Position};
@@ -53,14 +53,13 @@ pub fn make_kdt_ray_tracer<'a>(
     rendering_config: &'a RenderingConfig,
 ) -> impl Fn(Ray) -> [u8; 3] + 'a {
     move |ray| {
-        let box_iter = BoxIntersectIter::new(&ray, &kdt).leaves();
+        let box_iter = iter_intersect_ray(&kdt, &ray).leaves();
+        let mut color = 1;
         for box_intersect in box_iter {
-            let ref vertex_indices = box_intersect.node.vertices_index.as_ref().unwrap();
-            let triangle_index = vertex_indices
-                .iter()
-                .flat_map(|x| mesh.vertex_index_triangle_indices_map[x].iter());
-            let triangle_intersect = triangles_intersection(triangle_index, &ray, mesh);
+            let ref triangle_index = box_intersect.node.triangle_index.as_ref().unwrap();
+            let triangle_intersect = triangles_intersection(triangle_index.iter(), &ray, mesh);
             if triangle_intersect.is_none() {
+                color += 20;
                 continue;
             }
             return shade_triangle_hit(
@@ -71,7 +70,7 @@ pub fn make_kdt_ray_tracer<'a>(
             );
         }
 
-        return [0, 0, 0];
+        return [color, 0, 0];
     }
 }
 

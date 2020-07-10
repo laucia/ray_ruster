@@ -9,9 +9,7 @@ use gtk::prelude::*;
 use std::path::Path;
 use tempfile::tempdir;
 
-use ray_ruster::geometry::kdtree::BoxIntersectIter;
-use ray_ruster::geometry::kdtree::KdTree;
-use ray_ruster::geometry::kdtree::KdTreeLeafIter;
+use ray_ruster::geometry::kdtree::{iter_intersect_ray, KdTree, KdTreeLeafIter};
 use ray_ruster::geometry::mesh::Mesh;
 use ray_ruster::geometry::ray::Ray;
 use ray_ruster::geometry::types::{Direction, Position};
@@ -25,9 +23,8 @@ fn kdt_to_mesh(kdt: &Box<KdTree>, mesh: &Mesh) -> Mesh {
         .map(|x| x.clone())
         .collect();
     println!("vertices: {:}", vertices_index.len());
-    let mut triangle_index: Vec<usize> = vertices_index
-        .iter()
-        .flat_map(|x| mesh.vertex_index_triangle_indices_map[x].iter())
+    let mut triangle_index: Vec<usize> = KdTreeLeafIter::new(kdt)
+        .flat_map(|x| x.triangle_index.as_ref().unwrap().iter())
         .map(|x| x.clone())
         .collect();
     triangle_index.sort_unstable();
@@ -61,7 +58,7 @@ fn make_sample_ray(i: usize, j: usize, camera_config: &config::CameraConfig) -> 
 
 fn main() {
     let mesh = Mesh::load_off_file(Path::new("data/ram.off")).unwrap();
-    let kdt = Box::new(KdTree::from_vertices(&mesh.vertices));
+    let kdt = KdTree::from_mesh(&mesh);
     println!(
         "Mesh: {:?} vertices, {:?} triangles",
         mesh.vertices.len(),
@@ -87,7 +84,7 @@ fn main() {
     };
 
     let sample_ray = make_sample_ray(150, 150, &camera_config);
-    let box_iter = BoxIntersectIter::new(&sample_ray, &kdt).closest_branch();
+    let box_iter = iter_intersect_ray(&kdt, &sample_ray).closest_branch();
 
     // Render all images
     let dir = tempdir().ok().unwrap();

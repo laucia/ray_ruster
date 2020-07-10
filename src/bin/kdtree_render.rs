@@ -23,7 +23,7 @@ fn main() {
 
     let mesh = Mesh::load_off_file(Path::new("data/ram.off")).unwrap();
     println!("{:?}: loaded OFF model", start.elapsed());
-    let kdt = Box::new(KdTree::from_vertices(&mesh.vertices));
+    let kdt = KdTree::from_mesh(&mesh);
     println!("{:?}: Generated Kd-Tree", start.elapsed());
 
     let rot = na::Rotation3::face_towards(
@@ -36,12 +36,12 @@ fn main() {
         y: rot * Direction::new(0.0, 1.0, 0.0),
         z: rot * Direction::new(0.0, 0.0, 1.0),
         fov: 60.0,
-        aspect_ratio: 4.0 / 3.0,
-        width: 800,
-        height: 600,
+        aspect_ratio: 1.0,
+        width: 1200,
+        height: 1200,
     };
     let rendering_config = config::RenderingConfig {
-        normal_mode: config::NormalMode::Phong,
+        normal_mode: config::NormalMode::Triangle,
     };
     let img = image::render_image(
         ray_tracer::make_kdt_ray_tracer(&mesh, &kdt, &camera_config, &rendering_config),
