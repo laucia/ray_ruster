@@ -1,7 +1,12 @@
-use crate::geometry::bounding_box::AxisAlignedBoundingBox;
-use crate::geometry::ray::Ray;
-use crate::geometry::types::Position;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use std::collections::VecDeque;
+
+use crate::geometry::bounding_box::AxisAlignedBoundingBox;
+use crate::geometry::mesh::Mesh;
+use crate::geometry::ray::Ray;
+use crate::geometry::types::Triangle;
+use crate::geometry::types::{Direction, Position};
 
 pub struct KdTree {
     pub bounding_box: AxisAlignedBoundingBox,
@@ -10,6 +15,7 @@ pub struct KdTree {
 
     // leaf
     pub vertices_index: Option<Vec<usize>>,
+    pub triangle_index: Option<Vec<usize>>,
 }
 
 impl KdTree {
@@ -23,100 +29,134 @@ impl KdTree {
             left: left,
             right: right,
             vertices_index: None,
+            triangle_index: None,
         }
     }
 
-    fn new_leaf(bb: AxisAlignedBoundingBox, vertices_index: Option<Vec<usize>>) -> KdTree {
+    fn new_leaf(
+        bb: AxisAlignedBoundingBox,
+        vertices_index: Vec<usize>,
+        triangle_index: Vec<usize>,
+    ) -> KdTree {
         KdTree {
             bounding_box: bb,
             left: None,
             right: None,
-            vertices_index: vertices_index,
+            vertices_index: Some(vertices_index),
+            triangle_index: Some(triangle_index),
         }
     }
 
-    pub fn from_vertices(vertices: &Vec<Position>) -> KdTree {
-        let bb = AxisAlignedBoundingBox::new(vertices);
-
-        let largest_dim = bb.largest_dim();
-        let median = get_median(largest_dim, &vertices);
-
-        let right: Vec<(usize, Position)> = vertices
-            .iter()
-            .enumerate()
-            .filter(|&n| {
-                let (_, pos) = n;
-                pos[largest_dim] >= median
-            })
-            .map(|(i, pos)| (i, pos.clone()))
-            .collect();
-        let left: Vec<(usize, Position)> = vertices
-            .iter()
-            .enumerate()
-            .filter(|&n| {
-                let (_, pos) = n;
-                pos[largest_dim] < median
-            })
-            .map(|(i, pos)| (i, pos.clone()))
-            .collect();
-
-        let (left_bb, right_bb) = bb.split(largest_dim, median).unwrap();
-
-        KdTree::new_node(
-            bb,
-            Some(Box::from(KdTree::from_vertices_internal(left_bb, left))),
-            Some(Box::from(KdTree::from_vertices_internal(right_bb, right))),
-        )
-    }
-
-    fn from_vertices_internal(
-        bb: AxisAlignedBoundingBox,
-        index_vertices_pairs: Vec<(usize, Position)>,
-    ) -> KdTree {
-        // Terminal condition
-        if index_vertices_pairs.len() < 10 {
-            return KdTree::new_leaf(
-                bb,
-                Some(
+    /// Create a KdTree corresponding to the given mesh to
+    /// serve spatial queries on the mesh
+    ///
+    /// This is performed in 2 steps:
+    ///    1. The box are defined based on the vertex density
+    ///    2. The triangles are put in the leaves they intersect
+    pub fn from_mesh(mesh: &Mesh) -> Box<KdTree> {
+        fn recursion_internal(
+            mesh: &Mesh,
+            bb: AxisAlignedBoundingBox,
+            index_vertices_pairs: Vec<(usize, &Position)>,
+            index_triangle_pairs: Vec<(usize, &Triangle)>,
+        ) -> KdTree {
+            // Terminal condition
+            if index_vertices_pairs.len() < 10 {
+                return KdTree::new_leaf(
+                    bb,
                     index_vertices_pairs
                         .iter()
                         .map(|(i, _)| i.clone())
                         .collect(),
-                ),
-            );
+                    index_triangle_pairs
+                        .iter()
+                        .map(|(i, _)| i.clone())
+                        .collect(),
+                );
+            }
+            // Find split plane
+            let largest_dim = bb.largest_dim();
+            let vertices: Vec<&Position> =
+                index_vertices_pairs.iter().map(|(_, pos)| *pos).collect();
+            let median = get_median(largest_dim, &vertices);
+
+            // Split Points
+            let right_vertices: Vec<(usize, &Position)> = index_vertices_pairs
+                .iter()
+                .filter(|&n| {
+                    let (_, pos) = n;
+                    pos[largest_dim] >= median
+                })
+                .map(|(i, pos)| (i.clone(), *pos))
+                .collect();
+            let left_vertices: Vec<(usize, &Position)> = index_vertices_pairs
+                .iter()
+                .filter(|&n| {
+                    let (_, pos) = n;
+                    pos[largest_dim] < median
+                })
+                .map(|(i, pos)| (i.clone(), *pos))
+                .collect();
+            // Split Bounding Boxes
+            let (left_bb, right_bb) = bb.split(largest_dim, median).unwrap();
+
+            // Split triangles
+            let left_triangles: Vec<(usize, &Triangle)> = index_triangle_pairs
+                .iter()
+                .filter(|&n| {
+                    let (index, t) = n;
+                    let ref t1 = mesh.vertices[t[0]];
+                    let ref t2 = mesh.vertices[t[1]];
+                    let ref t3 = mesh.vertices[t[2]];
+                    let ref n = mesh.triangle_normals[*index];
+                    left_bb.intersect_triangle(t1, t2, t3, Some(n))
+                })
+                .map(|(i, t)| (i.clone(), *t))
+                .collect();
+            let right_triangles: Vec<(usize, &Triangle)> = index_triangle_pairs
+                .iter()
+                .filter(|&n| {
+                    let (index, t) = n;
+                    let ref t1 = mesh.vertices[t[0]];
+                    let ref t2 = mesh.vertices[t[1]];
+                    let ref t3 = mesh.vertices[t[2]];
+                    let ref n = mesh.triangle_normals[*index];
+                    right_bb.intersect_triangle(t1, t2, t3, Some(n))
+                })
+                .map(|(i, t)| (i.clone(), *t))
+                .collect();
+
+            // Recursion
+            KdTree::new_node(
+                bb,
+                Some(Box::from(recursion_internal(
+                    mesh,
+                    left_bb,
+                    left_vertices,
+                    left_triangles,
+                ))),
+                Some(Box::from(recursion_internal(
+                    mesh,
+                    right_bb,
+                    right_vertices,
+                    right_triangles,
+                ))),
+            )
         }
 
-        let largest_dim = bb.largest_dim();
-        let vertices = index_vertices_pairs
-            .iter()
-            .map(|(_, pos)| pos.clone())
-            .collect();
-        let median = get_median(largest_dim, &vertices);
+        // Initialize the recursion
+        let bb = AxisAlignedBoundingBox::new(&mesh.vertices);
+        let index_vertices_pairs: Vec<(usize, &Position)> =
+            mesh.vertices.iter().enumerate().collect();
+        let index_triangles_pairs: Vec<(usize, &Triangle)> =
+            mesh.triangles.iter().enumerate().collect();
 
-        let right: Vec<(usize, Position)> = index_vertices_pairs
-            .iter()
-            .filter(|&n| {
-                let (_, pos) = n;
-                pos[largest_dim] >= median
-            })
-            .map(|(i, pos)| (i.clone(), pos.clone()))
-            .collect();
-        let left: Vec<(usize, Position)> = index_vertices_pairs
-            .iter()
-            .filter(|&n| {
-                let (_, pos) = n;
-                pos[largest_dim] < median
-            })
-            .map(|(i, pos)| (i.clone(), pos.clone()))
-            .collect();
-
-        let (left_bb, right_bb) = bb.split(largest_dim, median).unwrap();
-
-        KdTree::new_node(
+        Box::from(recursion_internal(
+            mesh,
             bb,
-            Some(Box::from(KdTree::from_vertices_internal(left_bb, left))),
-            Some(Box::from(KdTree::from_vertices_internal(right_bb, right))),
-        )
+            index_vertices_pairs,
+            index_triangles_pairs,
+        ))
     }
 
     pub fn is_leaf(&self) -> bool {
@@ -124,7 +164,31 @@ impl KdTree {
     }
 }
 
-fn get_median(dim: usize, vertices: &Vec<Position>) -> f64 {
+pub fn iter_intersect_ray<'a>(
+    kdtree: &'a Box<KdTree>,
+    ray: &'a Ray,
+) -> BoxIntersectIter<'a, RayIntersector<'a>> {
+    let ray_box_intersector = RayIntersector { ray: ray };
+    BoxIntersectIter::<'a, RayIntersector>::new(ray_box_intersector, kdtree)
+}
+
+pub fn iter_intersect_triangle<'a>(
+    kdtree: &'a Box<KdTree>,
+    t1: &'a Position,
+    t2: &'a Position,
+    t3: &'a Position,
+    n: &'a Direction,
+) -> BoxIntersectIter<'a, TriangleIntersector<'a>> {
+    let ray_box_intersector = TriangleIntersector {
+        t1: t1,
+        t2: t2,
+        t3: t3,
+        n: n,
+    };
+    BoxIntersectIter::<'a, TriangleIntersector>::new(ray_box_intersector, kdtree)
+}
+
+fn get_median(dim: usize, vertices: &Vec<&Position>) -> f64 {
     let mut largest_dim_values = vertices.iter().map(|x| x[dim]).collect::<Vec<f64>>();
     largest_dim_values.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
@@ -134,72 +198,155 @@ fn get_median(dim: usize, vertices: &Vec<Position>) -> f64 {
     median
 }
 
-pub struct BoxIntersectIter<'a, 'b> {
-    ray: &'a Ray,
-    next_node: Option<&'b Box<KdTree>>,
+pub struct BoxIntersect<'a> {
+    pub distance: f64,
+    pub node: &'a Box<KdTree>,
 }
 
-impl<'a, 'b> BoxIntersectIter<'a, 'b> {
-    pub fn new(ray: &'a Ray, first_node: &'b Box<KdTree>) -> BoxIntersectIter<'a, 'b> {
-        let hit = ray.intersect_box(&(*first_node).bounding_box.bounds);
-        if hit.is_some() {
-            return BoxIntersectIter {
-                ray: ray,
-                next_node: Some(first_node),
-            };
-        } else {
-            return BoxIntersectIter {
-                ray: ray,
-                next_node: None,
-            };
+impl<'a> Ord for BoxIntersect<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
+}
+
+impl<'a> PartialOrd for BoxIntersect<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        // We are reversing the order to get a min heap
+        other.distance.partial_cmp(&self.distance)
+    }
+}
+
+impl<'a> Eq for BoxIntersect<'a> {}
+
+impl<'a> PartialEq for BoxIntersect<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.distance == other.distance
+    }
+}
+
+/// Yields all the nodes of the tree intersecting with the ray
+/// ordered by depth and intersection distance, ascending
+
+pub trait BoxIntersector<'a> {
+    fn intersect_box(&self, kdt_node: &'a Box<KdTree>) -> Option<BoxIntersect<'a>>;
+}
+
+pub struct RayIntersector<'a> {
+    ray: &'a Ray,
+}
+
+impl<'a> BoxIntersector<'a> for RayIntersector<'a> {
+    fn intersect_box(&self, kdt_node: &'a Box<KdTree>) -> Option<BoxIntersect<'a>> {
+        let hit = self.ray.intersect_box(&(*kdt_node).bounding_box.bounds);
+        match hit {
+            Some(distance) => Some(BoxIntersect {
+                distance: distance,
+                node: kdt_node,
+            }),
+            None => None,
         }
     }
 }
 
-impl<'a, 'b> Iterator for BoxIntersectIter<'a, 'b> {
-    type Item = &'b Box<KdTree>;
+pub struct TriangleIntersector<'a> {
+    t1: &'a Position,
+    t2: &'a Position,
+    t3: &'a Position,
+    n: &'a Direction,
+}
 
-    fn next(&mut self) -> Option<&'b Box<KdTree>> {
-        if self.next_node.is_none() {
+impl<'a> BoxIntersector<'a> for TriangleIntersector<'a> {
+    fn intersect_box(&self, kdt_node: &'a Box<KdTree>) -> Option<BoxIntersect<'a>> {
+        let hit =
+            &(*kdt_node)
+                .bounding_box
+                .intersect_triangle(self.t1, self.t2, self.t3, Some(self.n));
+        match hit {
+            true => Some(BoxIntersect {
+                distance: 1.0, // TODO: Is this OK ?
+                node: kdt_node,
+            }),
+            false => None,
+        }
+    }
+}
+
+pub struct BoxIntersectIter<'a, A: BoxIntersector<'a>> {
+    next_nodes: BinaryHeap<BoxIntersect<'a>>,
+    box_intersector: A,
+}
+
+impl<'a, A> BoxIntersectIter<'a, A>
+where
+    A: BoxIntersector<'a>,
+{
+    pub fn new(box_intersector: A, first_node: &'a Box<KdTree>) -> BoxIntersectIter<'a, A> {
+        let mut heap = BinaryHeap::new();
+        let intersect = box_intersector.intersect_box(first_node);
+        if intersect.is_some() {
+            heap.push(intersect.unwrap())
+        }
+        BoxIntersectIter {
+            next_nodes: heap,
+            box_intersector: box_intersector,
+        }
+    }
+    pub fn closest_branch(self) -> impl Iterator<Item = BoxIntersect<'a>> {
+        self.scan(0, |predecessor_is_leaf, intersect: BoxIntersect<'_>| {
+            if *predecessor_is_leaf == 1 {
+                return None;
+            }
+            if intersect.node.is_leaf() {
+                *predecessor_is_leaf += 1
+            }
+            Some(intersect)
+        })
+    }
+
+    /// Yields all the leaves of the tree intersecting with the ray
+    /// ordered by intersection distance, ascending
+    pub fn leaves(self) -> impl Iterator<Item = BoxIntersect<'a>> {
+        self.filter(|x| x.node.is_leaf())
+    }
+}
+
+impl<'a, A: BoxIntersector<'a>> Iterator for BoxIntersectIter<'a, A> {
+    type Item = BoxIntersect<'a>;
+
+    fn next(&mut self) -> Option<BoxIntersect<'a>> {
+        let next_node = self.next_nodes.pop();
+        if next_node.is_none() {
             return None;
         }
 
-        let cur_node = self.next_node.unwrap();
+        let cur_node = next_node.unwrap();
 
         // We have reached a leaf we can stop
-        if cur_node.is_leaf() {
-            self.next_node = None;
+        if cur_node.node.is_leaf() {
             return Some(cur_node);
         }
 
         // Otherwise let's check which child is the next node
         // before returning the node
-        let left_child = (*cur_node).left.as_ref().unwrap();
-        let right_child = (*cur_node).right.as_ref().unwrap();
-        let hit_left = self.ray.intersect_box(&(*left_child).bounding_box.bounds);
-        let hit_right = self.ray.intersect_box(&(*right_child).bounding_box.bounds);
+        let left_child = (*cur_node.node).left.as_ref().unwrap();
+        let right_child = (*cur_node.node).right.as_ref().unwrap();
+        let intersect_left = self.box_intersector.intersect_box(left_child);
+        let intersect_right = self.box_intersector.intersect_box(right_child);
 
-        if hit_right.is_none() && hit_left.is_none() {
-            return None;
-        }
-
-        match (hit_left, hit_right) {
+        match (intersect_left, intersect_right) {
             (None, None) => {
                 println!("Problem with parent box spliting");
                 return None;
             }
-            (Some(_), None) => {
-                self.next_node = Some(&left_child);
+            (Some(i_left), None) => {
+                self.next_nodes.push(i_left);
             }
-            (None, Some(_)) => {
-                self.next_node = Some(&right_child);
+            (None, Some(i_right)) => {
+                self.next_nodes.push(i_right);
             }
-            (Some(i), Some(j)) => {
-                if i < j {
-                    self.next_node = Some(&left_child);
-                } else {
-                    self.next_node = Some(&right_child);
-                }
+            (Some(i_left), Some(i_right)) => {
+                self.next_nodes.push(i_left);
+                self.next_nodes.push(i_right);
             }
         }
 
@@ -207,7 +354,12 @@ impl<'a, 'b> Iterator for BoxIntersectIter<'a, 'b> {
     }
 }
 
+/// Return all the leafs under a given KDTree Node
+///
+/// This iterator is used mostly for debugging, and
+/// performs a DFS traversal
 pub struct KdTreeLeafIter<'a> {
+    /// LIFO queue used for DFS
     pending: VecDeque<&'a Box<KdTree>>,
 }
 

@@ -9,9 +9,7 @@ use gtk::prelude::*;
 use std::path::Path;
 use tempfile::tempdir;
 
-use ray_ruster::geometry::kdtree::BoxIntersectIter;
-use ray_ruster::geometry::kdtree::KdTree;
-use ray_ruster::geometry::kdtree::KdTreeLeafIter;
+use ray_ruster::geometry::kdtree::{iter_intersect_ray, KdTree, KdTreeLeafIter};
 use ray_ruster::geometry::mesh::Mesh;
 use ray_ruster::geometry::ray::Ray;
 use ray_ruster::geometry::types::{Direction, Position};
@@ -25,11 +23,12 @@ fn kdt_to_mesh(kdt: &Box<KdTree>, mesh: &Mesh) -> Mesh {
         .map(|x| x.clone())
         .collect();
     println!("vertices: {:}", vertices_index.len());
-    let triangle_index: Vec<usize> = vertices_index
-        .iter()
-        .flat_map(|x| mesh.vertex_index_triangle_indices_map[x].iter())
+    let mut triangle_index: Vec<usize> = KdTreeLeafIter::new(kdt)
+        .flat_map(|x| x.triangle_index.as_ref().unwrap().iter())
         .map(|x| x.clone())
         .collect();
+    triangle_index.sort_unstable();
+    triangle_index.dedup();
     println!("triangles: {:}", triangle_index.len());
 
     // We copy all the vertices because this is debug
@@ -59,8 +58,12 @@ fn make_sample_ray(i: usize, j: usize, camera_config: &config::CameraConfig) -> 
 
 fn main() {
     let mesh = Mesh::load_off_file(Path::new("data/ram.off")).unwrap();
-    let kdt = Box::new(KdTree::from_vertices(&mesh.vertices));
-
+    let kdt = KdTree::from_mesh(&mesh);
+    println!(
+        "Mesh: {:?} vertices, {:?} triangles",
+        mesh.vertices.len(),
+        mesh.triangles.len()
+    );
     let rot = na::Rotation3::face_towards(
         &Direction::new(-1.0, 1.0, 0.0),
         &Direction::new(0.0, 0.0, 1.0),
@@ -81,14 +84,14 @@ fn main() {
     };
 
     let sample_ray = make_sample_ray(150, 150, &camera_config);
-    let box_iter = BoxIntersectIter::new(&sample_ray, &kdt);
+    let box_iter = iter_intersect_ray(&kdt, &sample_ray).closest_branch();
 
     // Render all images
     let dir = tempdir().ok().unwrap();
     let mut paths = Vec::new();
 
-    for (depth, kdt_node) in box_iter.take(9).enumerate() {
-        let mesh = kdt_to_mesh(kdt_node, &mesh);
+    for (depth, kdt_node) in box_iter.take(12).enumerate() {
+        let mesh = kdt_to_mesh(kdt_node.node, &mesh);
         let img = image::render_image(
             ray_tracer::make_naive_ray_tracer(&mesh, &camera_config, &rendering_config),
             &camera_config,
