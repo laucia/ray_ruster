@@ -5,6 +5,7 @@ pub struct AxisAlignedBoundingBox {
     pub bounds: [Position; 2],
     pub dim: Position,
     pub center: Position,
+    pub extent: Direction,
 }
 
 impl AxisAlignedBoundingBox {
@@ -20,10 +21,12 @@ impl AxisAlignedBoundingBox {
     }
 
     pub fn from_bounds(bounds: [Position; 2]) -> Self {
+        let c = nalgebra::center(&bounds[0], &bounds[1]);
         AxisAlignedBoundingBox {
             bounds: bounds,
             dim: Position::from(bounds[1] - bounds[0]),
-            center: nalgebra::center(&bounds[0], &bounds[1]),
+            center: c,
+            extent: Direction::from(bounds[1] - c),
         }
     }
 
@@ -71,6 +74,10 @@ impl AxisAlignedBoundingBox {
             Self::from_bounds([min, at_max]),
             Self::from_bounds([at_min, max]),
         ))
+    }
+
+    fn projected_radius(&self, axis: &Direction) -> f64 {
+        self.extent.dot(&axis.abs())
     }
 
     /// Is the given triangle intersecting the box
@@ -124,21 +131,25 @@ impl AxisAlignedBoundingBox {
             }
         }
 
-        return true;
+        let ref u0 = Position::from(t1 - self.center);
+        let ref u1 = Position::from(t2 - self.center);
+        let ref u2 = Position::from(t3 - self.center);
 
         // Test Triangle normal
-        let ref n = match triangle_normal {
-            Some(v) => *v,
-            None => {
-                let u = t2 - t1;
-                let v = t3 - t1;
-                u.cross(&v).normalize()
+        {
+            let ref n = match triangle_normal {
+                Some(v) => *v,
+                None => {
+                    let u = t2 - t1;
+                    let v = t3 - t1;
+                    u.cross(&v).normalize()
+                }
+            };
+            let triangle_projection = n.dot(&u0.coords);
+            let r = self.projected_radius(n);
+            if triangle_projection.abs() > r {
+                return false;
             }
-        };
-        let triangle_offset = n.dot(&t1.coords);
-        let (min_box, max_box) = project(&[&self.bounds[0], &self.bounds[1]], n);
-        if max_box < triangle_offset || min_box > triangle_offset {
-            return false;
         }
 
         // Test the nine edge cross-products
@@ -146,16 +157,15 @@ impl AxisAlignedBoundingBox {
 
         for edge in &triangle_edges {
             for box_normal in &box_normals {
-                let ref axis = edge.cross(box_normal);
-                let (min_box, max_box) = project(&[&self.bounds[0], &self.bounds[1]], axis);
-                let (min_triangle, max_triangle) = project(&[t1, t2, t3], axis);
+                let ref axis = edge.cross(box_normal).normalize();
+                let r = self.projected_radius(axis);
+                let (min_triangle, max_triangle) = project(&[u0, u1, u2], axis);
 
-                if max_box < min_triangle || min_box > max_triangle {
+                if r < min_triangle || -r > max_triangle {
                     return false;
                 }
             }
         }
-
         true
     }
 }

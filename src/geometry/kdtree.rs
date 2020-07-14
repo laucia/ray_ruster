@@ -125,11 +125,7 @@ impl KdTree {
                 })
                 .map(|(i, t)| (i.clone(), *t))
                 .collect();
-            println!(
-                "{:} left triangles | {:} right triangles",
-                left_triangles.len(),
-                right_triangles.len()
-            );
+
             // Recursion
             KdTree::new_node(
                 bb,

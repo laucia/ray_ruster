@@ -1,7 +1,6 @@
 extern crate nalgebra as na;
 extern crate regex;
 
-use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::io::BufRead;
@@ -18,7 +17,6 @@ pub struct Mesh {
     pub vertex_normals: Vec<Direction>,
     pub triangles: Vec<Triangle>,
     pub triangle_normals: Vec<Direction>,
-    pub vertex_index_triangle_indices_map: HashMap<usize, Vec<usize>>,
 }
 
 /// This defines the errors that can occure when parsing an OFF file
@@ -37,22 +35,11 @@ impl Mesh {
         let triangle_normals = compute_triangle_normals(&triangles, &vertices);
         let vertex_normals = compute_vertex_normals(&triangles, &vertices, &triangle_normals);
 
-        // Build maping
-        let mut vertex_index_triangle_indices_map: HashMap<usize, Vec<usize>> = HashMap::new();
-        for (triangle_index, triangle) in triangles.iter().enumerate() {
-            for i in 0..3 {
-                let registry_entry = vertex_index_triangle_indices_map
-                    .entry(triangle[i])
-                    .or_insert(Vec::<usize>::new());
-                registry_entry.push(triangle_index);
-            }
-        }
         Mesh {
             vertices: vertices,
             vertex_normals: vertex_normals,
             triangles: triangles,
             triangle_normals: triangle_normals,
-            vertex_index_triangle_indices_map: vertex_index_triangle_indices_map,
         }
     }
     pub fn load_off_file(path: &Path) -> Result<Mesh, OFFError> {
