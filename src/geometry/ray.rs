@@ -28,12 +28,12 @@ impl Ray {
 
     pub fn intersect_triangle(
         &self,
+        t0: &Position,
         t1: &Position,
         t2: &Position,
-        t3: &Position,
     ) -> Option<(Position, [f64; 2])> {
-        let u = *t2 - *t1;
-        let v = *t3 - *t1;
+        let u = *t1 - *t0;
+        let v = *t2 - *t0;
 
         let p = self.direction.cross(&v);
         let determinant = u.dot(&p);
@@ -45,7 +45,7 @@ impl Ray {
         }
         let inv_determinant = 1.0 / determinant;
 
-        let w = self.position - *t1;
+        let w = self.position - *t0;
         let dist_u = w.dot(&p) * inv_determinant;
         if dist_u < na::zero() || dist_u > 1.0 {
             return None;

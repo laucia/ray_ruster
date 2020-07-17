@@ -105,11 +105,11 @@ impl KdTree {
                 .iter()
                 .filter(|&n| {
                     let (index, t) = n;
-                    let ref t1 = mesh.vertices[t[0]];
-                    let ref t2 = mesh.vertices[t[1]];
-                    let ref t3 = mesh.vertices[t[2]];
+                    let ref t0 = mesh.vertices[t[0]];
+                    let ref t1 = mesh.vertices[t[1]];
+                    let ref t2 = mesh.vertices[t[2]];
                     let ref n = mesh.triangle_normals[*index];
-                    left_bb.intersect_triangle(t1, t2, t3, Some(n))
+                    left_bb.intersect_triangle(t0, t1, t2, Some(n))
                 })
                 .map(|(i, t)| (i.clone(), *t))
                 .collect();
@@ -117,11 +117,11 @@ impl KdTree {
                 .iter()
                 .filter(|&n| {
                     let (index, t) = n;
-                    let ref t1 = mesh.vertices[t[0]];
-                    let ref t2 = mesh.vertices[t[1]];
-                    let ref t3 = mesh.vertices[t[2]];
+                    let ref t0 = mesh.vertices[t[0]];
+                    let ref t1 = mesh.vertices[t[1]];
+                    let ref t2 = mesh.vertices[t[2]];
                     let ref n = mesh.triangle_normals[*index];
-                    right_bb.intersect_triangle(t1, t2, t3, Some(n))
+                    right_bb.intersect_triangle(t0, t1, t2, Some(n))
                 })
                 .map(|(i, t)| (i.clone(), *t))
                 .collect();
@@ -174,15 +174,15 @@ pub fn iter_intersect_ray<'a>(
 
 pub fn iter_intersect_triangle<'a>(
     kdtree: &'a Box<KdTree>,
+    t0: &'a Position,
     t1: &'a Position,
     t2: &'a Position,
-    t3: &'a Position,
     n: &'a Direction,
 ) -> BoxIntersectIter<'a, TriangleIntersector<'a>> {
     let ray_box_intersector = TriangleIntersector {
+        t0: t0,
         t1: t1,
         t2: t2,
-        t3: t3,
         n: n,
     };
     BoxIntersectIter::<'a, TriangleIntersector>::new(ray_box_intersector, kdtree)
@@ -249,9 +249,9 @@ impl<'a> BoxIntersector<'a> for RayIntersector<'a> {
 }
 
 pub struct TriangleIntersector<'a> {
+    t0: &'a Position,
     t1: &'a Position,
     t2: &'a Position,
-    t3: &'a Position,
     n: &'a Direction,
 }
 
@@ -260,7 +260,7 @@ impl<'a> BoxIntersector<'a> for TriangleIntersector<'a> {
         let hit =
             &(*kdt_node)
                 .bounding_box
-                .intersect_triangle(self.t1, self.t2, self.t3, Some(self.n));
+                .intersect_triangle(self.t0, self.t1, self.t2, Some(self.n));
         match hit {
             true => Some(BoxIntersect {
                 distance: 1.0, // TODO: Is this OK ?
