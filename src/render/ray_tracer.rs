@@ -94,11 +94,11 @@ where
     let mut hit = false;
     for triangle_index in triangle_indices {
         let ref triangle = mesh.triangles[*triangle_index];
-        let ref t1 = mesh.vertices[triangle[0]];
-        let ref t2 = mesh.vertices[triangle[1]];
-        let ref t3 = mesh.vertices[triangle[2]];
+        let ref t0 = mesh.vertices[triangle[0]];
+        let ref t1 = mesh.vertices[triangle[1]];
+        let ref t2 = mesh.vertices[triangle[2]];
 
-        let intersection_opt = ray.intersect_triangle(t1, t2, t3);
+        let intersection_opt = ray.intersect_triangle(t0, t1, t2);
         if intersection_opt.is_some() {
             let (intersection_point, bar_coord) = intersection_opt.unwrap();
             // Init the value

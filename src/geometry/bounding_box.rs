@@ -95,9 +95,9 @@ impl AxisAlignedBoundingBox {
     /// * https://stackoverflow.com/questions/17458562/efficient-aabb-triangle-intersection-in-c-sharp
     pub fn intersect_triangle(
         &self,
+        t0: &Position,
         t1: &Position,
         t2: &Position,
-        t3: &Position,
         triangle_normal: Option<&Direction>,
     ) -> bool {
         /// Get the maximum projection of a polygon on the given axis
@@ -125,23 +125,23 @@ impl AxisAlignedBoundingBox {
             Direction::new(0.0, 0.0, 1.0),
         ];
         for (i, box_normal) in box_normals.iter().enumerate() {
-            let (min_triangle, max_triangle) = project(&[t1, t2, t3], box_normal);
+            let (min_triangle, max_triangle) = project(&[t0, t1, t2], box_normal);
             if max_triangle < self.bounds[0][i] || min_triangle > self.bounds[1][i] {
                 return false;
             }
         }
 
-        let ref u0 = Position::from(t1 - self.center);
-        let ref u1 = Position::from(t2 - self.center);
-        let ref u2 = Position::from(t3 - self.center);
+        let ref u0 = Position::from(t0 - self.center);
+        let ref u1 = Position::from(t1 - self.center);
+        let ref u2 = Position::from(t2 - self.center);
 
         // Test Triangle normal
         {
             let ref n = match triangle_normal {
                 Some(v) => *v,
                 None => {
-                    let u = t2 - t1;
-                    let v = t3 - t1;
+                    let u = t1 - t0;
+                    let v = t2 - t0;
                     u.cross(&v).normalize()
                 }
             };
@@ -153,7 +153,7 @@ impl AxisAlignedBoundingBox {
         }
 
         // Test the nine edge cross-products
-        let triangle_edges = [*t2 - *t1, *t3 - *t2, *t1 - *t3];
+        let triangle_edges = [*t1 - *t0, *t2 - *t1, *t0 - *t2];
 
         for edge in &triangle_edges {
             for box_normal in &box_normals {
@@ -180,11 +180,11 @@ mod tests {
             Position::new(0.0, 0.0, 0.0),
             Position::new(10.0, 10.0, 10.0),
         ]);
-        let ref t1 = Position::new(12.0, 9.0, 9.0);
-        let ref t2 = Position::new(9.0, 12.0, 9.0);
-        let ref t3 = Position::new(19.0, 19.0, 20.0);
+        let ref t0 = Position::new(12.0, 9.0, 9.0);
+        let ref t1 = Position::new(9.0, 12.0, 9.0);
+        let ref t2 = Position::new(19.0, 19.0, 20.0);
 
-        assert!(!aabb.intersect_triangle(t1, t2, t3, None));
+        assert!(!aabb.intersect_triangle(t0, t1, t2, None));
     }
 
     #[test]
@@ -193,11 +193,11 @@ mod tests {
             Position::new(10.0, 10.0, 10.0),
             Position::new(20.0, 20.0, 20.0),
         ]);
-        let ref t1 = Position::new(22.0, 19.0, 19.0);
-        let ref t2 = Position::new(19.0, 22.0, 19.0);
-        let ref t3 = Position::new(29.0, 29.0, 30.0);
+        let ref t0 = Position::new(22.0, 19.0, 19.0);
+        let ref t1 = Position::new(19.0, 22.0, 19.0);
+        let ref t2 = Position::new(29.0, 29.0, 30.0);
 
-        assert!(!aabb.intersect_triangle(t1, t2, t3, None));
+        assert!(!aabb.intersect_triangle(t0, t1, t2, None));
     }
 
     #[test]
@@ -206,11 +206,11 @@ mod tests {
             Position::new(0.0, 0.0, 0.0),
             Position::new(10.0, 10.0, 10.0),
         ]);
-        let ref t1 = Position::new(1.0, 1.0, 1.0);
-        let ref t2 = Position::new(9.0, 12.0, 9.0);
-        let ref t3 = Position::new(5.0, 5.0, 5.0);
+        let ref t0 = Position::new(1.0, 1.0, 1.0);
+        let ref t1 = Position::new(9.0, 12.0, 9.0);
+        let ref t2 = Position::new(5.0, 5.0, 5.0);
 
-        assert!(aabb.intersect_triangle(t1, t2, t3, None));
+        assert!(aabb.intersect_triangle(t0, t1, t2, None));
     }
 
     #[test]
@@ -220,10 +220,10 @@ mod tests {
             Position::new(10.0, 10.0, 0.0),
         ]);
         // This triangle is lying intersecting with the box as a
-        let ref t1 = Position::new(1.0, 1.0, 0.0);
-        let ref t2 = Position::new(9.0, 12.0, 0.0);
-        let ref t3 = Position::new(5.0, 5.0, 1.0);
+        let ref t0 = Position::new(1.0, 1.0, 0.0);
+        let ref t1 = Position::new(9.0, 12.0, 0.0);
+        let ref t2 = Position::new(5.0, 5.0, 1.0);
 
-        assert!(aabb.intersect_triangle(t1, t2, t3, None));
+        assert!(aabb.intersect_triangle(t0, t1, t2, None));
     }
 }
