@@ -105,6 +105,10 @@ impl Mesh {
             }
         }
 
+        if counter_vertices > 0 || count_triangles > 0 {
+            return Err(OFFError::String("OFF file corrupted: vertice / triangle count declared doesn't match available data"));
+        }
+
         let mesh = Mesh::from_vertices_and_triangles(vertices, triangles);
 
         return Ok(mesh);

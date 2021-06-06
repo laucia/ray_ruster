@@ -25,6 +25,11 @@ fn interpolation_n_phong(
     return (*n1 * (1.0 - coord[0] - coord[1]) + coord[0] * *n2 + coord[1] * *n3).normalize();
 }
 
+/// Return a function that given a ray will calculate its observed color
+/// i.e. background or object
+///
+/// This function proceeds by iterating all the triangles in the mesh to
+/// look for intersections
 pub fn make_naive_ray_tracer<'a>(
     mesh: &'a Mesh,
     camera_config: &'a CameraConfig,
@@ -32,7 +37,7 @@ pub fn make_naive_ray_tracer<'a>(
 ) -> impl Fn(Ray) -> [u8; 3] + 'a {
     move |ray| {
         let all_triangle_indices_iter = 0..mesh.triangles.len();
-        let triangle_intersect = triangles_intersection(
+        let triangle_intersect = triangles_closest_intersection(
             all_triangle_indices_iter.collect::<Vec<usize>>().iter(),
             &ray,
             mesh,
@@ -46,6 +51,10 @@ pub fn make_naive_ray_tracer<'a>(
     }
 }
 
+/// Return a function that given a ray will calculate its observed color
+/// i.e. background or object
+///
+/// This function leverages a kd-tree for faster triangle/ray intersection
 pub fn make_kdt_ray_tracer<'a>(
     mesh: &'a Mesh,
     kdt: &'a Box<KdTree>,
@@ -54,12 +63,11 @@ pub fn make_kdt_ray_tracer<'a>(
 ) -> impl Fn(Ray) -> [u8; 3] + 'a {
     move |ray| {
         let box_iter = iter_intersect_ray(&kdt, &ray).leaves();
-        let mut color = 1;
         for box_intersect in box_iter {
             let ref triangle_index = box_intersect.node.triangle_index.as_ref().unwrap();
-            let triangle_intersect = triangles_intersection(triangle_index.iter(), &ray, mesh);
+            let triangle_intersect =
+                triangles_closest_intersection(triangle_index.iter(), &ray, mesh);
             if triangle_intersect.is_none() {
-                color += 20;
                 continue;
             }
             return shade_triangle_hit(
@@ -70,7 +78,7 @@ pub fn make_kdt_ray_tracer<'a>(
             );
         }
 
-        return [color, 0, 0];
+        return [0, 0, 0];
     }
 }
 
@@ -80,7 +88,7 @@ pub struct TriangleIntersect {
     pub barycentric_coordinate: [f64; 2],
 }
 
-fn triangles_intersection<'a, I>(
+fn triangles_closest_intersection<'a, I>(
     triangle_indices: I,
     ray: &Ray,
     mesh: &Mesh,
